@@ -1,0 +1,173 @@
+## Test Guidelines and Procedures
+
+### Test Environment Setup
+
+1. Ensure you have run the directory creation script to generate ~/fzf-cd-test and all special folders.
+2. Navigate to the test directory in your terminal: cd ~/fzf-cd-test
+3. Source your script to activate the widget.
+
+- [x] **PASS** (Current code passes this test)
+- [-] **PARTIAL** (Partially working, requires tweaks)
+- [!] **FAIL** (Current code fails this test)
+
+---
+
+# --- fzf-tab-completion (bash) ---
+# Project: https://github.com/lincheney/fzf-tab-completion
+# Last Commit: Jan 20, 2025
+# Testing Date: Dec 3, 2025
+#
+# SCOPE DIFFERENCE:
+# This project's goal is broader; it targets ALL shell tab completions,
+# unlike our widget which focuses only on enhanced 'cd' navigation.
+#
+# TESTING CONTEXT:
+# Only the 'cd' specific implementation within the bash version
+# of this project has been evaluated.
+#
+# Note: The latest main branch version was used at the time of testing.
+
+### A. Basic Navigation & "Fast Path" Optimization
+
+| # | Scenario | Input Command (Cursor at end) | Expected Result | Status
+|:--:|---|---|---|:---
+| [-] 01 | Empty Line Selection | cd <TAB> | Opens fzf. Lists all items in current dir. | [Newline character add unexisting options to fzf list]
+| [x] 02 | Single Result Auto-Accept | cd singl <TAB> | Completes to cd single_dir/ immediately (No fzf window). |
+| [x] 03 | Multiple Results Trigger | cd plain <TAB> | Opens fzf showing plain/ and plain2/. |
+| [x] 04 | Trailing Slash Handling | cd single_dir/ <TAB> | Reloads/Keeps single_dir/ and lists its contents (_sub/). |
+| [x] 05 | Parent Shortcut | cd .. <TAB> | Immediately expands to cd ../ (Fast navigation). |
+| [x] 06 | Parent Shortcut + Sub | cd ../singl <TAB> | Completes to cd ../single_dir/ (if valid in parent). |
+| [x] 07 | Root Directory | cd / <TAB> | Opens fzf listing root / contents. |
+| [x] 08 | Lowercase Filter | cd testd <TAB> | Should match TestDir/ (Case insensitive). |
+
+---
+
+### B. State Machine Parser: Quoting & Escaping
+
+| # | Scenario | Input Command | Expected Result | Status
+|:--:|---|---|---|:---
+| [x] 09 | Single Quotes (Spaces) | cd 'Has Sp' <TAB> | Completes to cd 'Has Space'/ or cd Has\ Space/. |
+| [x] 10 | Single Quotes (Exact) | cd 'Has Space/' <TAB> | Opens inside the directory and lists its contents (_sub/). |
+| [x] 11 | Double Quotes (Normal) | cd "Double_D" <TAB> | Completes to cd "Double_Dir"/ or cd Double_Dir/. |
+| [!] 12 | Double Quotes (Escaped Quote) | cd "My\"Fold" <TAB> | Completes to cd "My\"Folder"/ or cd My\"Folder/ |
+| [-] 13 | Double Quotes (Escaped Backslash)| cd "Back\\" <TAB> | Completes to cd "Back\\Slash"/ or cd Back\\Slash/ |
+| [-] 14 | ANSI-C Quoting (Newline) | cd $'Dir\nN <TAB> | Completes to cd $'Dir\nName'/ (Folder with real newline). | [Complete path correct ,but dont complete or list its sub folders]
+| [!] 15 | ANSI-C Quoting (Tab) | cd $'Tab\t <TAB> | Completes to cd $'Tab\tChar'/. |
+| [-] 16 | Mixed Syntax | cd Mixed\ "Quo <TAB> | Completes to cd Mixed\ \"Quotes/. | [Complete path correct ,but dont complete or list its sub folders]
+
+---
+
+### C. Locale-Aware Filtering (Turkish Support)
+
+| # | Scenario | Input Command | Expected Result | Status
+|:--:|---|---|---|:---
+| [!] 17 | Lowercase 'i' matches 'İ' | cd istan <TAB> | Should match İSTANBUL/. |
+| [!] 18 | Uppercase 'I' matches 'ı' | cd IŞIK <TAB> | Should match ışık/. |
+| [!] 19 | Dotted/Dotless Mixed | cd çığ <TAB> | Should match ÇIĞLIK/. |
+| [!] 20 | Case Insensitivity | cd tEsTdIr <TAB> | Should complete to TestDir/. |
+
+---
+
+### D. File Name Edge Cases (Stream Encoder)
+
+| # | Scenario | Input Command | Expected Result | Status
+|:--:|---|---|---|:---
+| [x] 21 | Single Space | cd Has\ Sp <TAB> | Should complete to cd Has\ Space/. |
+| [x] 22 | Multiple Spaces | cd Multiple\ \ Sp <TAB> | Completes to cd Multiple\ \ Spaces/. |
+| [x] 23 | Leading Spaces | cd \ Lead <TAB> | Completes to cd \ Leading\ Space/. |
+| [!] 24 | Newline char in name | cd 01_NL <TAB> | Correctly enters dir. Fzf list shows valid visualization. |
+| [-] 25 | Carriage Return char | cd 02_CR <TAB> | Correctly enters dir. No cursor jump errors. | [Complete path correct ,but dont complete or list its sub folders]
+| [!] 26 | CRNL char combination | cd 03_CRNL <TAB> | Correctly enters dir. Fzf visualization must be accurate. |
+| [!] 27 | NLCR char combination | cd 04_NLCR <TAB> | Correctly enters dir. Fzf visualization must be accurate. |
+| [-] 28 | Tab char in name | cd Tab\t <TAB> | Completes to cd Tab\tChar/. | [If cd Tab, complete path correct. But dont complete or list its sub folders]
+| [-] 29 | Backslash in Middle | cd Backslash\\He <TAB> | Should complete to cd Backslash\\Here/. | [If cd Backslash, complete path correct. But dont complete or list its sub folders]
+| [-] 30 | Backslash at end of name | cd Trailing\ Backs <TAB> | Completes to cd Trailing\ Backslash\\/. | [Complete path correct ,but dont complete or list its sub folders]
+| [-] 31 | Double Backslash | cd Double\\\\Bac <TAB> | Completes to cd Double\\\\Backslash/. | [Complete path correct ,but dont complete or list its sub folders]
+| [-] 32 | Mixed Escaping/Quoting | cd Mixed\\ Esca <TAB> | Should complete to cd Mixed\\\ Escaping/. | [Complete path correct ,but dont complete or list its sub folders]
+| [x] 33 | Extremely Long Directory Name | cd long_name <TAB> | Completes, and Fzf cutting/scrolling for long names works correctly. |
+
+---
+
+### E. Absolute & Relative Path Handling
+
+| # | Scenario | Input Command | Expected Result | Status
+|:--:|---|---|---|:---
+| [x] 34 | Partial Absolute Path Completion | cd /home/u <TAB> | Completes to appropriate path like /home/<user>/. |
+| [-] 35 | Absolute Path | cd /home/$USER/fzf-cd-test/Testd <TAB>| Completes to TestDir/. | [/home/<user>/fzf-cd-test/Testd completed, but cd /home/$USER/fzf-cd-test/Testd not]
+| [x] 36 | Relative Nested | cd TEST/S <TAB> | Completes to cd TEST/SubDir/. |
+| [x] 37 | Relative Dot Prefix | cd ./singl <TAB> | Completes to cd ./single_dir/ or cd single_dir/. |
+| [x] 38 | Symlink Navigation | cd Symlink <TAB> | Enters symlink, lists target contents (_sub/ , SubDir). |
+| [x] 39 | Hierarchical Reversion/Segment Deletion | cd TEST/SubDir written, then delete SubDir cd TEST/ <TAB> . | Should list SubDir again. |
+
+---
+
+### F. Hidden Files & Toggling
+
+| # | Scenario | Input Command | Expected Result | Status
+|:--:|---|---|---|:---
+| [x] 40 | Toggle Hidden ON | cd <TAB> -> Press Ctrl+T | Hidden files (.hidden1) appear in list. Header says [Hidden: ON]. |
+| [x] 41 | Toggle Hidden OFF | cd <TAB> -> Press Ctrl+T | Hidden files disappear. Header says [Hidden: OFF]. |
+| [x] 42 | Explicit Hidden Path | cd .fold <TAB> | Completes .folder_hidden/ |
+| [x] 43 | Persistence | Toggle ON, Exit fzf. cd <TAB> | Hidden files should still be visible (Environment var saved). |
+Note: # This plugin does not implement hidden toggle mechanism. 
+# It passed the general hidden file tests (40,41 & 43) because 
+# its UI choice is to DISPLAY ALL hidden files by default.
+---
+
+### G. Special Escaped Characters (In Directory Name)
+
+| # | Scenario | Input Command | Expected Result | Status
+|:--:|---|---|---|:---
+| [-] 44 | Dollar Sign ($) | cd \$Money <TAB> | Should complete to cd \$MoneyDir/. | [fzf choice work but cd \$Money not completed]
+| [x] 45 | Hash/Comment Sign (#) | cd \#Comment <TAB> | Should complete to cd \#CommentDir/. |
+| [-] 46 | Single Quote (') in name | cd \'Apostr <TAB> | Should complete to cd \'Apostrophe\'Dir/. | [fzf choice work (not complete/list sub folders) but cd \'Apostr not completed]
+| [-] 47 | Ampersand (&) | cd Dir\&Amper <TAB> | cd Dir\&Ampersand/ must be completed. | [fzf choice work (not complete/list sub folders) but cd Dir\&Amper wrongly completed]
+| [x] 48 | Exclamation Mark (!) | cd Dir\!Bang <TAB> | cd Dir\!Bang/ must be completed (Literal character). |
+| [x] 49 | Question Mark (?) | cd Dir\?Quest <TAB> | cd Dir\?Question/ must be completed (Literal character). |
+| [x] 50 | Asterisk (*) | cd Dir\*Star <TAB> | cd Dir\*Star/ must be completed (Literal character). |
+
+---
+
+### H. Tilde (~) Expansion & Preservation
+
+| # | Scenario | Input Command | Expected Result | Status
+|:--:|---|---|---|:---
+| [-] 51 | Tilde Root | cd ~ <TAB> | Lists Home directory contents. Result line keeps ~/.... | [if cd ~/ its preserved, but cd ~ also preserved but not equal to /home/<user>]
+| [x] 52 | Tilde + Path | cd ~/Des <TAB> | Completes to ~/Desktop/ (or similar). Not /home/user/Desktop. |
+| [x] 53 | Tilde + Hidden | cd ~/.con <TAB> | Completes to ~/.config/ (or similar). |
+| [x] 54 | Tilde Parent | cd ~/fzf-cd-test/.. <TAB> | Completes to cd ~/fzf-cd-test/../ (Fast navigation). |
+
+---
+
+### I. Flag Safety & Dash Prefixes
+
+| # | Scenario | Input Command | Expected Result | Status
+|:--:|---|---|---|:---
+| [!] 55 | Dash Start (Root) | cd -lead <TAB> | Completes to cd -- -leading-dash/. |
+| [x] 56 | Dash Start (Relative) | cd TireTest/-par <TAB> | Completes to cd TireTest/-partial-dir/. |
+| [x] 57 | Dash Start (No Flag) | cd -- -lead <TAB> | Completes to cd -- -leading-dash/ (Does not duplicate --). |
+| [!] 58 | Double Dash Name | cd --double <TAB> | Completes to cd -- --double-dash-dir/. |
+
+---
+
+### J. Permissions & Stability
+
+| # | Scenario | Input Command | Expected Result | Status
+|:--:|---|---|---|:---
+| [-] 59 | Inaccessible Parent | cd NoReadDir <TAB> | Fzf opens. Header shows [Inaccessible]. List is empty. | [Dont enter inside but also not give warning]
+| [x] 60 | No Write Permission | cd NoWriteDir <TAB> | Completes name. Pressing TAB again inside shows inside. |
+| [-] 61 | Visual Artifacts | Resize terminal while fzf is open | Fzf should redraw correctly. | [In some edge cases, scrolling can cause visual artifacts]
+| [x] 62 | Visual Restore | Close fzf (ESC or Accept) | Previous terminal content is restored (No scrollback corruption). |
+
+---
+
+### K. Advanced & Stress Tests
+
+| # | Scenario | Input Command | Expected Result | Status
+|:--:|---|---|---|:---
+| [!] 63 | Path Editing/Reversion | cd sing/sub_f Move cursor left until cd sin -> <TAB> | Should complete to cd sing/sub_folder/ |
+| [-] 64 | Massive Directory | cd large_dir_performance/ <TAB> | Performance check. Should load reasonably fast. | [Plugin itself have decent delay and folder count significantly increase loading time]
+| [x] 65 | Deeply Nested | cd a/b/c/d/e <TAB> | Should resolve correctly. |
+| [x] 66 | Rapid Keypresses | cd <TAB><ESC><TAB><ESC> | Should not crash the shell or leave artifacts. |
+| [x] 67 | Unicode/Emoji | cd 📁 <TAB> | Completes to cd 📁_Folder/. |
+| [x] 68 | Chinese Characters | cd 中 <TAB> | Completes to cd 中文目录/. |
