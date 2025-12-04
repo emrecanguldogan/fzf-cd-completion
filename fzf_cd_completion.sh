@@ -45,9 +45,13 @@
 # ==============================================================================
 
 # -- Configuration & Defaults --
-# Use parameter expansion with defaults to allow external overrides.
-FZF_START_KEY_SEQ="${1:-${FZF_START_KEY_SEQ:-}}"
-FZF_ACCEPT_KEY_NAME="${2:-${FZF_ACCEPT_KEY_NAME:-f1}}"
+# This structure utilizes environment variables set externally (via 'export') for configuration.
+# It defaults to the assigned value only if the environment variable is unset. (default configured to F1)
+DEFAULT_KEY_SEQ='"\eOP"'
+DEFAULT_ACCEPT_KEY_NAME='f1'
+
+FZF_START_KEY_SEQ="${FZF_START_KEY_SEQ:-$DEFAULT_KEY_SEQ}"
+FZF_ACCEPT_KEY_NAME="${FZF_ACCEPT_KEY_NAME:-$DEFAULT_ACCEPT_KEY_NAME}"
 
 # Standard fzf options: 40% height, reverse layout for better UX near the prompt.
 export FZF_DEFAULT_OPTS="${FZF_DEFAULT_OPTS:-} --height 40% --layout=reverse"
@@ -346,7 +350,7 @@ fzf-cd-widget() {
     fi
 
     # -- Determine Search Context --
-    # Determines the current search context by splitting the user's input into 
+    # Determines the current search context by splitting the users input into 
     # the 'target directory' (where to search) and the 'search term' (what to filter for).
     if [[ -n "$unescaped" ]]; then
         if [[ "$unescaped" == */ && "$unescaped" != "/" ]]; then
@@ -354,7 +358,7 @@ fzf-cd-widget() {
             target_dir="${unescaped%/}"
             search_term=""
         elif [[ "$unescaped" == */* ]]; then
-            # Case 2: Input contains '/' but doesn't end with it (e.g., 'cd /usr/l'). Target is parent dir, search term is 'l'.
+            # Case 2: Input contains '/' but doesnt end with it (e.g., 'cd /usr/l'). Target is parent dir, search term is 'l'.
             target_dir="${unescaped%/*}"
             search_term="${unescaped##*/}"
             [[ -z "$target_dir" ]] && target_dir="/"
@@ -471,7 +475,7 @@ fzf-cd-widget() {
             tput smcup > /dev/tty 2>/dev/null || true
             
             # -- Run FZF --
-            # Uses --print-query to keep user input if they don't select anything
+            # Uses --print-query to keep user input if they dont select anything
             # Uses --expect="ctrl-t" to handle the hidden file toggle
             # Uses --no-select-1 to prevent fzf from automatically selecting the item if only one candidate is left.
             fzf_output=$(

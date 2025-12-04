@@ -10,15 +10,13 @@ Standard directory completion is notoriously fragile when handling non-standard 
 
 However, **fzf_cd_completion** provides a **modern, interactive, fuzzy-search interface** via FZF, change standard directory completion experience into a powerful, **visual command-line explorer**.
 
-The widget is designed to be assigned to a custom key (like `F1` or `Ctrl-O`) to be used alongside the native completion mechanism. (Default is `F1`)
+The widget is designed to be assigned to a custom key (like `F1` or `Alt-K`) to be used alongside the native completion mechanism. (Default is `F1`)
 
-Note: It is not bounded to `TAB` by default to preserve standard Bash completions (e.g., `ls <TAB>`) from being broken.
-
-It is designed to seamlessly integrate by replacing the default `cd <TAB>` behavior, but can be flexibly assigned to any key combination (e.g., `Ctrl-X`)** to be used *alongside* the native completion mechanism.
+Note: It is not bounded to `TAB` by default to preserve standard Bash completions (e.g., `ls <TAB>`). If you bind the `TAB` key to the widget, you will lose the other bindings. See the [installation](#️-installation) and [custom key binding](#-custom-key-binding-selection-guide) section for detailed instructions.
 
 This combination of superior user experience (UX) and the **low-level State Machine parsing** ensures that while you enjoy the beautiful interface, the underlying logic is resilient enough to guaranteeing correct path completion.
 
-This widget was tested against 68 distinct case scenarios and proven more resilient than leading alternatives like `fzf-tab-completion` and `zsh-interactive-cd`.
+This widget was [tested](#-tests-details) against 68 distinct case scenarios and proven more resilient than leading alternatives like `fzf-tab-completion` and `zsh-interactive-cd`.
 
 ## ✨ Key Features
 
@@ -87,22 +85,29 @@ Once the `fzf` window is open, the following keys control navigation and filteri
 # But you can bind any available key.
 
 # Option 1: Bind to F1 (Recommended Default)
-export FZF_START_KEY_SEQ='"\eOP"'
-export FZF_ACCEPT_KEY_NAME="f1"
+#export FZF_START_KEY_SEQ='"\eOP"'
+#export FZF_ACCEPT_KEY_NAME="f1"
 
 source /path/to/fzf_cd_completion.sh
 
-# Option 2: Bind to Ctrl-O
+# Option 2: Bind to Alt-k
+export FZF_START_KEY_SEQ='"\ek"'
+export FZF_ACCEPT_KEY_NAME="alt-k"
+
+source /path/to/fzf_cd_completion.sh
+
+# Option 3: Bind to Ctrl-O
+
+# While this key is bound to 'operate-and-get-next' by default, 
+# its utility is highly specialized and easily replaced by 
+# sequential key presses (`Up/Down Arrows`).
+# So this key combo also good to use for binding.
+
 export FZF_START_KEY_SEQ='"\C-o"'
 export FZF_ACCEPT_KEY_NAME="ctrl-o"
 
 source /path/to/fzf_cd_completion.sh
 
-# Option 3: Bind to Alt-k
-export FZF_START_KEY_SEQ='"\ek"'
-export FZF_ACCEPT_KEY_NAME="alt-k"
-
-source /path/to/fzf_cd_completion.sh
 ```
 
 ---
