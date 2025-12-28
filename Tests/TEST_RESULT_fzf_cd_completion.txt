@@ -38,7 +38,7 @@
 | [x] 11 | Double Quotes (Normal) | cd "Double_D" <TAB> | Completes to cd "Double_Dir"/ or cd Double_Dir/. |
 | [x] 12 | Double Quotes (Escaped Quote) | cd "My\"Fold" <TAB> | Completes to cd "My\"Folder"/ or cd My\"Folder/ |
 | [x] 13 | Double Quotes (Escaped Backslash)| cd "Back\\" <TAB> | Completes to cd "Back\\Slash"/ or cd Back\\Slash/ |
-| [-] 14 | ANSI-C Quoting (Newline) | cd $'Dir\nN <TAB> | Completes to cd $'Dir\nName'/ (Folder with real newline). | [cd $'Dir\n completed cd $'Dir\nN not]
+| [x] 14 | ANSI-C Quoting (Newline) | cd $'Dir\nN <TAB> | Completes to cd $'Dir\nName'/ (Folder with real newline). | [cd $'Dir\n completed cd $'Dir\nN not]
 | [x] 15 | ANSI-C Quoting (Tab) | cd $'Tab\t <TAB> | Completes to cd $'Tab\tChar'/. |
 | [x] 16 | Mixed Syntax | cd Mixed\ "Quo <TAB> | Completes to cd Mixed\ \"Quotes/. |
 
@@ -131,7 +131,7 @@
 | [x] 55 | Dash Start (Root) | cd -lead <TAB> | Completes to cd -- -leading-dash/. |
 | [x] 56 | Dash Start (Relative) | cd TireTest/-par <TAB> | Completes to cd TireTest/-partial-dir/. |
 | [x] 57 | Dash Start (No Flag) | cd -- -lead <TAB> | Completes to cd -- -leading-dash/ (Does not duplicate --). |
-| [!] 58 | Double Dash Name | cd --double <TAB> | Completes to cd -- --double-dash-dir/. |
+| [x] 58 | Double Dash Name | cd --double <TAB> | Completes to cd -- --double-dash-dir/. |
 
 ---
 

@@ -188,15 +188,17 @@ _fzf_cd_real_path() {
             if [[ "$c" == '"' ]]; then 
                 # When the closing double quote is encountered, exit to the NORMAL state.
                 state="NORMAL";
-            
-            elif [[ "$c" == '\' ]] && [[ "${input:i+1:1}" == '"' ]]; then 
-                # Handles escaped double quotes (e.g., "My\"Folder"), ensuring the quote is part of the path 
-                # and allowing correct completion (e.g., cd My\"Folder/sub).
-                out+='"'; (( i++ ));
-
+            elif [[ "$c" == '\' ]]; then
+                # Only escape Double Quotes and Backslashes.
+                local next="${input:i+1:1}"
+                if [[ "$next" == '"' || "$next" == '\' ]]; then
+                    out+="$next"
+                    (( i++ ))
+                else
+                    # Append all other characters literally.
+                    out+="$c"
+                fi
             else 
-                # Append all other characters literally. This correctly handles non-special escapes
-                # like '\\' or '\a', as the backslash is preserved in the output as per Bash rules.
                 out+="$c"; 
             fi
         fi
@@ -233,23 +235,12 @@ _fzf_cd_filter_starts_with() {
         return 0
     fi
 
-    awk -v TERM="$search_term" -v LANG="$lang" '
+    # Pass search term via ENVIRON to prevent awk from interpreting escape sequences
+    FZF_SEARCH_TERM="$search_term" awk -v LANG="$lang" '
     function norm_tr(s,    out) {
-        # Manually swap problematic Turkish chars to ensure accurate lowercase conversion
-        gsub("İ","i",s)
-        gsub("I","ı",s)
-        gsub("Ş","ş",s)
-        gsub("Ğ","ğ",s)
-        gsub("Ü","ü",s)
-        gsub("Ö","ö",s)
-        gsub("Ç","ç",s)
-
-        # After targeted conversion, use tolower for remaining ASCII letters.
-        out = tolower(s)
-
-        # Normalize dotless/dotted i variants to plain "i" for consistency
-        gsub("ı","i",out)
-        return out
+        gsub("İ","i",s); gsub("I","ı",s); gsub("Ş","ş",s); gsub("Ğ","ğ",s)
+        gsub("Ü","ü",s); gsub("Ö","ö",s); gsub("Ç","ç",s)
+        out = tolower(s); gsub("ı","i",out); return out
     }
     function norm_default(s,    out) {
         # Handles case conversion for default.
@@ -265,8 +256,8 @@ _fzf_cd_filter_starts_with() {
         }
     }
     BEGIN {
-        # Normalize the search term only once before processing any input lines.
-        term_norm = normalize(TERM, LANG)
+        # Retrieve raw term from environment variable
+        term_norm = normalize(ENVIRON["FZF_SEARCH_TERM"], LANG)
     }
     {
         cand = $0
@@ -275,7 +266,7 @@ _fzf_cd_filter_starts_with() {
         if (substr(cand_norm,1,length(term_norm)) == term_norm) {
             print cand
         }
-    }'  
+    }'
 }
 
 # ==============================================================================
@@ -301,6 +292,8 @@ fzf-cd-widget() {
 
     # Decode the path (resolve quotes/escapes)
     local unescaped="$(_fzf_cd_real_path "$current_path_arg")"
+    unescaped="$(_fzf_cd_real_path "$current_path_arg"; printf x)"
+    unescaped="${unescaped%x}"
     
     # Handle Tilde expansion (~ -> $HOME) manually to preserve it in UI later
     local home_path="$HOME"
@@ -308,6 +301,30 @@ fzf-cd-widget() {
     if [[ "$unescaped" == "~" || "$unescaped" == "~/"* ]]; then
         is_tilda_path=1
         unescaped="${unescaped/#\~/$home_path}"
+    fi
+
+    # -- Variable Expansion --
+    # Expands shell environment variables (e.g., $USER, $HOME).
+    #
+    # Security Measures:
+    # 1. Blocks Command Substitution: $(...) and `...` to prevent RCE.
+    # 2. Blocks Legacy Arithmetic: $[...] which can also execute code.
+    # 3. Blocks Indirect Expansion: ${!VAR} to prevent reading restricted variables.
+    if [[ "$unescaped" == *\$* ]]; then
+        # Check for dangerous patterns:
+        #  - "\$("  : Standard command substitution / Arithmetic $((...))
+        #  - "\`"   : Backtick command substitution
+        #  - "\$["  : Legacy arithmetic expansion (can exec code)
+        #  - "\${!" : Indirect variable expansion (info disclosure)
+        if [[ "$unescaped" != *"\$("* && \
+              "$unescaped" != *"\`"* && \
+              "$unescaped" != *"\$["* && \
+              "$unescaped" != *"\${!"* ]]; then
+             
+             local expanded
+             expanded=$(eval echo "\"$unescaped\"" 2>/dev/null)
+             [[ -n "$expanded" ]] && unescaped="$expanded"
+        fi
     fi
 
     # -- Auto-Complete Parent Directory --
@@ -329,8 +346,8 @@ fzf-cd-widget() {
         fi
 
         # Prevents directory paths starting with '-' from being misinterpreted as command flags (e.g., 'cd -'). 
-        # Inserts '-- ' into the prefix if necessary to force interpretation as a path argument.
-        if [[ "$appended_parent" == -* && "$appended_parent" != --* ]]; then
+        # This ensures the argument is treated strictly as a directory path, preventing flag misinterpretation.
+        if [[ "$appended_parent" == -* ]]; then
             if [[ "$line_prefix" == "cd "* && "$line_prefix" != "cd -- "* ]]; then
                 line_prefix="cd -- "
             fi
@@ -392,6 +409,23 @@ fzf-cd-widget() {
         safe_target_dir="./$target_dir"
     fi
 
+    # -- Logical Path Resolution --
+    # Standardize the path using 'readlink -m'.
+    # This approach performs a pure logical resolution without accessing the filesystem,
+    # ensuring that inaccessible intermediate directories (e.g., /root/../) do not cause failures.
+
+    # This ensures consistent handling for:
+    # 1. Bypass permission restrictions in intermediate directories.
+    # 2. Directories starting with dashes (via '--').
+    if command -v readlink >/dev/null 2>&1; then
+        # The -n flag prevents readlink from appending a trailing newline.
+        # The 'printf x' trick preserves any actual trailing newlines in directory names.
+        # The double dash (--) safeguards against dash-prefixed directory names.
+        local resolved_path
+        resolved_path=$(readlink -m -n -- "$safe_target_dir" 2>/dev/null; printf x)
+        safe_target_dir="${resolved_path%x}"
+    fi
+
     # -- Fetch Candidates --
     # Gathers the list of subdirectories (candidates) for fzf, based on the determined target directory.
     if [ -d "$safe_target_dir" ] && [ "$target_dir" != "." ]; then
@@ -415,6 +449,17 @@ fzf-cd-widget() {
         fi
     fi
 
+    # --- ENCODING LOGIC (MOVED UP) ---
+    # We compute the encoded term once here to use it for BOTH the fast-path check
+    # AND the FZF interactive query. This ensures 'Dir\r' is treated as 'Dir\r' in FZF.
+    local encoded_term=""
+    if [[ -n "$search_term" ]]; then
+        encoded_term="${search_term//\\/\\\\}"
+        encoded_term="${encoded_term//$'\n'/\\n}"
+        encoded_term="${encoded_term//$'\r'/\\r}"
+        encoded_term="${encoded_term//$'\t'/\\t}"
+    fi
+
     local candidate_count
     candidate_count=$(printf '%s\n' "$candidates" | grep -c .) 
     
@@ -426,10 +471,8 @@ fzf-cd-widget() {
 
     # If a result has not yet been found and a search term exists, check for a single, definitive match.
     if [[ -z "$result" && -n "$search_term" ]]; then
-        # Pre-filter candidates by the search term using locale-aware case-insensitive comparison.
-        starts_with=$(
-            printf '%s\n' "$candidates" | _fzf_cd_filter_starts_with "$search_term" "$_FZF_CD_LANG"
-        )
+        # Use the encoded_term we computed above
+        starts_with=$(printf '%s\n' "$candidates" | _fzf_cd_filter_starts_with "$encoded_term" "$_FZF_CD_LANG")
         starts_with_count=$(printf '%s\n' "$starts_with" | grep -c .)
 
         # If the prefix match yields exactly one candidate, set it as the definitive result.
@@ -440,8 +483,11 @@ fzf-cd-widget() {
 
     # -- Interactive Mode (FZF Loop) --
     if [[ -z "$result" ]]; then
-        local fzf_output key_pressed output_lines
-        local current_query="$search_term" 
+        local fzf_query_val="$encoded_term"
+        # If search_term was empty, query should be empty
+        [[ -z "$search_term" ]] && fzf_query_val=""
+
+        local fzf_output key_pressed current_query="$fzf_query_val"
 
         # Prevent redundant disk scan on first iteration
         local refresh_needed=0 
@@ -593,9 +639,9 @@ fzf-cd-widget() {
             safe_new_path=$(printf '%q' "$new_path")
         fi
 
-        # Handle paths starting with '-' from being misinterpreted as command flags.
-        # Inserts '-- ' into the prefix if necessary to force interpretation as a path argument.
-        if [[ "$new_path" == -* && "$new_path" != --* ]]; then
+        # Prevents directory paths starting with '-' from being misinterpreted as command flags (e.g., 'cd -'). 
+        # This ensures the argument is treated strictly as a directory path, preventing flag misinterpretation.
+        if [[ "$new_path" == -* ]]; then
             if [[ "$line_prefix" == "cd "* && "$line_prefix" != "cd -- "* ]]; then
                 line_prefix="cd -- "
             fi
