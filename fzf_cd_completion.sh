@@ -4,42 +4,50 @@
 # FZF CD Completion Widget
 #
 # Description:
-#   A robust, context-aware directory navigation widget using fzf.
+#   A robust, secure, and context-aware directory navigation widget using fzf.
 #   It handles edge cases like filenames with newlines, complex quoting/escaping,
-#   and locale-specific character normalization (specifically for Turkish).
+#   locale-specific normalization, and safe environment variable expansion.
 #
 # Key Features:
 #   1. Zero-dependency path parsing (State Machine implementation).
 #   2. Safe filename handling (Null-terminated streams).
-#   3. Context-aware directory listing: Lists contents of the current directory 
-#      or the partial path argument
-#   4. Interactive hidden file toggling (Ctrl+T) within fzf.
-#   5. Locale aware fast completion: Supports Language specific character normalization
-#      for accurate, case-insensitive matching. (Only Turkish support added for now)
-#   6. Tilde (~) expansion preservation: Correctly handles and preserves the '~' 
+#   3. Secure Variable Expansion: Safely expands environment variables (e.g., 
+#      $HOME, $VAR) while preventing Remote Code Execution (RCE) vectors.
+#   4. Ambiguity Resolution: Intelligently distinguishes between literal filenames 
+#      containing '$' (e.g., '$MoneyDir') and actual shell variables.
+#   5. Logical Path Resolution: Uses 'readlink -m' (if available) to resolve paths 
+#      without physical traversal, bypassing permission errors in intermediate dirs.
+#   6. Context-aware directory listing: Lists contents of the current directory 
+#      or the partial path argument.
+#   7. Interactive hidden file toggling (Ctrl+T) within fzf.
+#   8. Locale aware fast completion: Supports Language specific character normalization
+#      (specifically for Turkish) for accurate, case-insensitive matching.
+#   9. Tilde (~) expansion preservation: Correctly handles and preserves the '~' 
 #      symbol in the final Readline output.
-#   7. Shortcut support: Automatically completes '..' to '../' to speed up navigation.
-#   8. Flag safety: Automatically prepends the '-- ' argument delimiter before 
-#      paths starting with a dash (e.g., 'cd -dir') to prevent flag misinterpretation.
-#   9. Screen stability: Uses **tput smcup/rmcup** to prevent fzf from causing visual 
-#      corruption in some cases
+#   10. Shortcut support: Automatically completes '..' to '../' to speed up navigation.
+#   11. Flag safety: Automatically prepends '-- ' to paths starting with a dash.
+#   12. Screen stability: Uses tput smcup/rmcup to prevent visual corruption.
 #
 # Requires:
 #   1. Bash version must be 4.0 or higher.
 #   2. fzf (Fuzzy Finder) must be installed and available in the PATH.
 #   3. Core and Terminal Compatibility: 
-#       a. GNU sed for '-z' flag support (null-terminated streams), 
+#       a. GNU sed for '-z' flag support (null-terminated streams).
 #           * Linux: Supported (GNU sed).
-#           * MacOS: The default BSD sed **does not support** the '-z' flag.
-#                    MacOS users must install GNU sed via Homebrew 'brew install gnu-sed'.
+#           * MacOS: Requires 'brew install gnu-sed'.
 #
-#       b. find for safe output flags, '-print0' and '-printf'.
-#           * Linux/macOS: Generally supported by both GNU and BSD versions.
+#       b. GNU find for '-printf' flag support.
+#           * Linux: Standard.
+#           * MacOS: The default BSD find does NOT support '-printf'.
+#                    Requires 'brew install findutils'.
 #
-#       c. Standard awk for locale-aware filtering 
+#       c. GNU Coreutils (Optional but Recommended): 
+#           * 'readlink' with '-m' support is used for robust logical path resolution.
+#           * Linux: Standard.
+#           * MacOS: Requires 'brew install coreutils' to enable this feature.
+#                    (The script safely degrades if this is missing).
 #
-#   4. tput (smcup/rmcup) is required to properly isolate fzf in the alternate screen buffer.
-#      This help preventing visual artifacts during terminal resizing/tiling.
+#       d. tput (smcup/rmcup) for screen buffer management.
 #
 # Note: Not tested in MacOS. But if requirements satisfied, the code should be working properly. 
 # ==============================================================================
@@ -303,27 +311,63 @@ fzf-cd-widget() {
         unescaped="${unescaped/#\~/$home_path}"
     fi
 
-    # -- Variable Expansion --
-    # Expands shell environment variables (e.g., $USER, $HOME).
-    #
-    # Security Measures:
-    # 1. Blocks Command Substitution: $(...) and `...` to prevent RCE.
-    # 2. Blocks Legacy Arithmetic: $[...] which can also execute code.
-    # 3. Blocks Indirect Expansion: ${!VAR} to prevent reading restricted variables.
+    # -- Variable Expansion and Ambiguity Resolution --
+    # Detects if the input string contains a '$' character and determines whether
+    # to treat it as a shell environment variable (e.g., $HOME) or a literal
+    # filename containing a '$' (e.g., $MoneyDir).
     if [[ "$unescaped" == *\$* ]]; then
-        # Check for dangerous patterns:
-        #  - "\$("  : Standard command substitution / Arithmetic $((...))
-        #  - "\`"   : Backtick command substitution
-        #  - "\$["  : Legacy arithmetic expansion (can exec code)
-        #  - "\${!" : Indirect variable expansion (info disclosure)
+        # Security Guard: Prevent Remote Code Execution (RCE)
+        # Explicitly block command substitution, backticks, arithmetic expansion,
+        # and indirect variable expansion to ensure safety before processing.
         if [[ "$unescaped" != *"\$("* && \
               "$unescaped" != *"\`"* && \
               "$unescaped" != *"\$["* && \
               "$unescaped" != *"\${!"* ]]; then
              
-             local expanded
-             expanded=$(eval echo "\"$unescaped\"" 2>/dev/null)
-             [[ -n "$expanded" ]] && unescaped="$expanded"
+             # Strategy: Path Existence Verification
+             # To decide if expansion is required, we check if the path (or its parent)
+             # physically exists on the disk. If it does, the '$' is treated as a 
+             # literal part of the filename. If not, it is treated as a variable.
+             
+             local is_literal_path=false
+             
+             # 1. Direct Existence Check:
+             # Check if the full path currently exists as a file, directory, or symlink.
+             if [[ -e "$unescaped" || -L "$unescaped" ]]; then
+                 is_literal_path=true
+             else
+                 # 2. Parent Directory Check:
+                 # If the full path does not exist (e.g., user is typing a partial name),
+                 # check the parent directory. If the parent exists, we assume the user
+                 # is navigating a valid tree structure, implying the '$' is literal.
+                 local parent
+                 # Efficiently calculate parent dir using Bash string manipulation (fast, no forks).
+                 if [[ "$unescaped" == */* ]]; then
+                     parent="${unescaped%/*}"  
+                 else
+                     parent="."                
+                 fi
+                 
+                 # If the parent directory exists, treat the path as literal to preserve
+                 # the '$' character in the directory name.
+                 if [[ -e "$parent" || -L "$parent" ]]; then
+                     is_literal_path=true
+                 fi
+             fi
+
+             # Execution Logic:
+             if [[ "$is_literal_path" == true ]]; then
+                 # Path exists physically; do not expand. Preserve '$' as a literal character.
+                 : 
+             else
+                 # Path does not exist physically; assume it is a variable (e.g., $HOME).
+                 # Security Measure: Escape double quotes to prevent command injection
+                 # during the evaluation process.
+                 local safe_unescaped="${unescaped//\"/\\\"}"
+                 local expanded
+                 expanded=$(eval echo "\"$safe_unescaped\"" 2>/dev/null)
+                 [[ -n "$expanded" ]] && unescaped="$expanded"
+             fi
         fi
     fi
 

@@ -12,7 +12,7 @@
 
 ---
 
-# Testing Date: Dec 4, 2025
+# Testing Date: Dec 30, 2025
 
 ### A. Basic Navigation & "Fast Path" Optimization
 
@@ -80,7 +80,7 @@
 | # | Scenario | Input Command | Expected Result | Status
 |:--:|---|---|---|:---
 | [x] 34 | Partial Absolute Path Completion | cd /home/u <TAB> | Completes to appropriate path like /home/<user>/. |
-| [-] 35 | Absolute Path | cd /home/$USER/fzf-cd-test/Testd <TAB>| Completes to TestDir/. | [/home/<user>/fzf-cd-test/Testd completed, but cd /home/$USER/fzf-cd-test/Testd not]
+| [x] 35 | Absolute Path | cd /home/$USER/fzf-cd-test/Testd <TAB>| Completes to TestDir/. | [/home/<user>/fzf-cd-test/Testd completed, but cd /home/$USER/fzf-cd-test/Testd not]
 | [x] 36 | Relative Nested | cd TEST/S <TAB> | Completes to cd TEST/SubDir/. |
 | [x] 37 | Relative Dot Prefix | cd ./singl <TAB> | Completes to cd ./single_dir/ or cd single_dir/. |
 | [x] 38 | Symlink Navigation | cd Symlink <TAB> | Enters symlink, lists target contents (_sub/ , SubDir). |
